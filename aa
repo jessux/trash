@@ -1,0 +1,587 @@
+from langgraph.graph import END, StateGraph, START
+from graphs.graph_functions import Assistant, State, create_entry_node, create_tool_node_with_fallback
+from langchain_core.messages import ToolMessage
+from typing import Literal
+
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import StateGraph
+
+from dotenv import load_dotenv
+
+#assistants (ADD HERE FOR NEW)
+from assistants.primary_assistant import *
+from assistants.zscaler_assistant import *
+from assistants.wifi_assistant import *
+from assistants.fai_assistant import *
+from assistants.confluence_assistant import *
+from assistants.servicenow_assistant import * 
+from assistants.referential_assistant import * 
+from assistants.centreon_assistant import *
+from assistants.firewall_assistant import *
+
+load_dotenv()
+
+
+import base64
+from typing import Annotated, List, Literal, Optional, Union, Callable
+from typing_extensions import TypedDict
+from langchain_core.messages import ToolMessage
+from langchain_core.messages.base import BaseMessage
+from langchain_core.runnables import RunnableLambda
+from langgraph.graph.message import AnyMessage
+from langgraph.prebuilt import ToolNode
+from langchain_core.runnables import Runnable, RunnableConfig
+from pydantic import BaseModel, Field
+
+# 📌 Charger le fichier .tiktoken et créer un dictionnaire d'encodage/décodage
+file_path = r"./cache/cl100k_base.tiktoken"
+
+token_dict = {}  # Mapping token_id -> texte
+reverse_token_dict = {}  # Mapping texte -> token_id
+
+with open(file_path, "r", encoding="utf-8") as f:
+    for line in f:
+        encoded, token_id = line.strip().split()
+        try:
+            decoded_text = base64.b64decode(encoded).decode("utf-8")
+        except UnicodeDecodeError:
+            decoded_text = base64.b64decode(encoded)  # Garder les bytes bruts si le texte n'est pas en UTF-8
+        token_id = int(token_id)
+        token_dict[token_id] = decoded_text
+        reverse_token_dict[decoded_text] = token_id
+
+# ✅ Fonction d'encodage : transforme un texte en tokens
+def encode_text(text: str) -> List[int]:
+    """Encode un texte en une liste d'IDs de tokens."""
+    return [reverse_token_dict[char] for char in text if char in reverse_token_dict]
+
+# ✅ Fonction de décodage : transforme des tokens en texte
+def decode_tokens(tokens: List[int]) -> str:
+    """Décode une liste d'IDs de tokens en texte."""
+    return "".join(token_dict.get(t, "?") for t in tokens)
+
+# ✅ Mise à jour du comptage des tokens avec encode_text
+def count_tokens(text: str) -> int:
+    """Compte le nombre de tokens dans un texte donné."""
+    return len(encode_text(text))
+
+# ✅ Correction de truncate_messages
+
+# On fixe max_tokens en dehors de la fonction
+MAX_TOKENS = 64000  
+
+def truncate_messages(
+    left: Optional[Union[List[BaseMessage], BaseMessage]], 
+    right: Optional[Union[List[BaseMessage], BaseMessage]]
+) -> List[BaseMessage]:  
+    """Tronque les messages pour ne pas dépasser MAX_TOKENS."""
+    
+    # S'assurer que left et right sont toujours des listes
+    left = [left] if isinstance(left, BaseMessage) else (left or [])
+    right = [right] if isinstance(right, BaseMessage) else (right or [])
+
+    combined = left + right  
+
+    total_tokens = 0
+    truncated_messages = []
+
+    # Parcourt en sens inverse pour garder les plus récents
+    for message in reversed(combined):
+        message_text = getattr(message, "content", "")
+        message_tokens = count_tokens(message_text)
+
+        if total_tokens + message_tokens > MAX_TOKENS:
+            break
+
+        truncated_messages.append(message)
+        total_tokens += message_tokens
+
+    return list(reversed(truncated_messages))  # On remet dans l'ordre
+
+# ✅ Correction de la gestion des dialogues
+def update_dialog_stack(left: list[str], right: Optional[str]) -> list[str]:
+    """Push ou pop le state."""
+    left = left or []
+    if right is None:
+        return left
+    if right == "pop":
+        return left[:-1]
+    return left + [right]
+
+class State(TypedDict):
+    messages: Annotated[list[AnyMessage], truncate_messages]
+    dialog_state: Annotated[
+        list[
+            Literal[
+                "primary_assistant",
+                "update_zscaler",
+                "update_wifi",
+                "update_fai",
+                "update_confluence",
+                "update_servicenow",
+                "update_referential",
+                "update_firewall",
+                "update_centreon"
+            ]
+        ],
+        update_dialog_stack,
+    ]
+
+# ✅ Correction de l'Assistant : meilleure gestion des erreurs
+class Assistant:
+    def __init__(self, runnable: Runnable):
+        self.runnable = runnable
+
+    def __call__(self, state: State, config: RunnableConfig):
+        max_attempts = 10
+        attempts = 0
+
+        while attempts < max_attempts:
+            result = self.runnable.invoke(state)
+
+            if not result.tool_calls and (
+                not result.content
+                or (isinstance(result.content, list) and result.content and not result.content[0].get("text"))
+            ):
+                messages = state["messages"] + [("user", "Respond with a real output.")]
+                state = {**state, "messages": messages}
+                attempts += 1
+            else:
+                return {"messages": result}
+
+        raise RuntimeError("Assistant did not generate a valid response after max attempts.")
+
+# ✅ Ajout d'une gestion d'erreurs pour les outils
+def handle_tool_error(state) -> dict:
+    error = state.get("error")
+    tool_calls = state["messages"][-1].tool_calls
+    return {
+        "messages": [
+            ToolMessage(
+                content=f"Error: {repr(error)}\n please fix your mistakes.",
+                tool_call_id=tc["id"],
+            )
+            for tc in tool_calls
+        ]
+    }
+
+# ✅ Ajout d'un nœud d'outil avec fallback
+def create_tool_node_with_fallback(tools: list) -> dict:
+    return ToolNode(tools).with_fallbacks(
+        [RunnableLambda(handle_tool_error)], exception_key="error"
+    )
+
+
+def create_entry_node(assistant_name: str, new_dialog_state: str) -> Callable:
+    def entry_node(state: State) -> dict:
+        tool_call_id = state["messages"][-1].tool_calls[0]["id"]
+        return {
+            "messages": [
+                ToolMessage(
+                    content=f"The assistant is now the {assistant_name}. Reflect on the above conversation between the host assistant and the user."
+                    f" The user's intent is unsatisfied. Use the provided tools to assist the user. Remember, you are {assistant_name},"
+                    " and the tasks, update, other other action is not complete until after you have successfully invoked the appropriate tool."
+                    " If the user changes their mind or needs help for other tasks, call the CompleteOrEscalate function to let the primary host assistant take control."
+                    " Do not mention who you are - just act as the proxy for the assistant.",
+                    tool_call_id=tool_call_id,
+                )
+            ],
+            "dialog_state": new_dialog_state,
+        }
+
+    return entry_node
+
+# ✅ Ajout de la gestion des événements (affichage)
+def _print_event(event: dict, _printed: set, max_length=1500):
+    current_state = event.get("dialog_state")
+    if current_state:
+        print("Currently in: ", current_state[-1])
+    message = event.get("messages")
+    if message:
+        if isinstance(message, list):
+            message = message[-1]
+        if message.id not in _printed:
+            msg_repr = message.pretty_repr(html=True)
+            print(msg_repr)
+            _printed.add(message.id)
+class CompleteOrEscalate(BaseModel):
+    """A tool to mark the current task as completed and/or to escalate control of the dialog to the main assistant,
+    who can re-route the dialog based on the user's needs."""
+
+    cancel: bool = False
+    reason: str
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "cancel": True,
+                "reason": "User changed their mind about the current task.",
+            },
+            "example 2": {
+                "cancel": True,
+                "reason": "I have fully completed the task.",
+            },
+            "example 3": {
+                "cancel": False,
+                "reason": "I need to search the user's emails or calendar for more information.",
+            },
+        }
+
+
+
+################################################################
+################################################################
+################################################################
+################################################################
+
+
+# Primary Assistant
+# class ToAssistant(BaseModel):
+#     """Transfers work to a specialized assistant to handle customer support incident solving."""
+
+#     request: str = Field(
+#         description="Any necessary followup questions the customer support assistant should clarify before proceeding."
+#     )
+
+
+
+
+builder = StateGraph(State)
+
+
+
+# def user_info(state: State):
+#     return {"user_info": fetch_user_incidents.invoke({})}
+
+
+# builder.add_node("fetch_user_info", user_info)
+# builder.add_edge(START, "fetch_user_info")
+# builder.add_edge("fetch_user_info", "primary_assistant")
+
+builder.add_edge(START, "primary_assistant")
+
+
+# Primary assistant
+builder.add_node("primary_assistant", Assistant(assistant_runnable))
+builder.add_node(
+    "primary_assistant_tools", create_tool_node_with_fallback(primary_assistant_tools)
+)
+
+# The assistant can route to one of the delegated assistants,
+# directly use a tool, or directly respond to the user
+
+#### (ADD HERE FOR NEW)
+builder.add_conditional_edges(
+    "primary_assistant",
+    route_primary_assistant,
+    [
+        "enter_zscaler",
+        "enter_wifi",
+        "enter_fai",
+        "enter_confluence",
+        "enter_servicenow",
+        "enter_referential",
+        "enter_centreon",
+        "enter_firewall",
+        "primary_assistant_tools",
+        END,
+    ],
+)
+builder.add_edge("primary_assistant_tools", "primary_assistant")
+
+# Zscaler assistant
+builder.add_node(
+    "enter_zscaler",
+    create_entry_node("Zscaler & Proxy Assistant", "update_zscaler"),
+)
+builder.add_node("update_zscaler", Assistant(zscaler_runnable))
+builder.add_edge("enter_zscaler", "update_zscaler")
+
+builder.add_node(
+    "update_zscaler_sensitive_tools",
+    create_tool_node_with_fallback(zscaler_sensitive_tools),
+)
+builder.add_node(
+    "update_zscaler_safe_tools",
+    create_tool_node_with_fallback(zscaler_safe_tools),
+)
+
+
+
+
+builder.add_edge("update_zscaler_sensitive_tools", "update_zscaler")
+builder.add_edge("update_zscaler_safe_tools", "update_zscaler")
+builder.add_conditional_edges(
+    "update_zscaler",
+    route_update_zscaler,
+    ["update_zscaler_sensitive_tools", "update_zscaler_safe_tools", "leave_skill", END],
+)
+
+
+# Wifi assistant
+builder.add_node(
+    "enter_wifi",
+    create_entry_node("Wifi Assistant", "update_wifi"),
+)
+builder.add_node("update_wifi", Assistant(wifi_runnable))
+builder.add_edge("enter_wifi", "update_wifi")
+
+builder.add_node(
+    "update_wifi_sensitive_tools",
+    create_tool_node_with_fallback(wifi_sensitive_tools),
+)
+builder.add_node(
+    "update_wifi_safe_tools",
+    create_tool_node_with_fallback(wifi_safe_tools),
+)
+
+
+
+
+builder.add_edge("update_wifi_sensitive_tools", "update_wifi")
+builder.add_edge("update_wifi_safe_tools", "update_wifi")
+builder.add_conditional_edges(
+    "update_wifi",
+    route_update_wifi,
+    ["update_wifi_sensitive_tools", "update_wifi_safe_tools", "leave_skill", END],
+)
+
+# FAI assistant
+builder.add_node(
+    "enter_fai",
+    create_entry_node("Fournisseur d'accès internet Assistant", "update_fai"),
+)
+builder.add_node("update_fai", Assistant(fai_runnable))
+builder.add_edge("enter_fai", "update_fai")
+
+builder.add_node(
+    "update_fai_sensitive_tools",
+    create_tool_node_with_fallback(fai_sensitive_tools),
+)
+builder.add_node(
+    "update_fai_safe_tools",
+    create_tool_node_with_fallback(fai_safe_tools),
+)
+
+
+
+builder.add_edge("update_fai_sensitive_tools", "update_fai")
+builder.add_edge("update_fai_safe_tools", "update_fai")
+builder.add_conditional_edges(
+    "update_fai",
+    route_update_fai,
+    ["update_fai_sensitive_tools", "update_fai_safe_tools", "leave_skill", END],
+)
+
+
+# Confluence assistant
+builder.add_node(
+    "enter_confluence",
+    create_entry_node("Recherche en documentation interne Assistant", "update_confluence"),
+)
+builder.add_node("update_confluence", Assistant(confluence_runnable))
+builder.add_edge("enter_confluence", "update_confluence")
+
+builder.add_node(
+    "update_confluence_sensitive_tools",
+    create_tool_node_with_fallback(confluence_sensitive_tools),
+)
+builder.add_node(
+    "update_confluence_safe_tools",
+    create_tool_node_with_fallback(confluence_safe_tools),
+)
+
+
+
+
+builder.add_edge("update_confluence_sensitive_tools", "update_confluence")
+builder.add_edge("update_confluence_safe_tools", "update_confluence")
+builder.add_conditional_edges(
+    "update_confluence",
+    route_update_confluence,
+    ["update_confluence_sensitive_tools", "update_confluence_safe_tools", "leave_skill", END],
+)
+
+
+# Servicenow assistant
+builder.add_node(
+    "enter_servicenow",
+    create_entry_node("Recherche dans servicenow", "update_servicenow"),
+)
+builder.add_node("update_servicenow", Assistant(servicenow_runnable))
+builder.add_edge("enter_servicenow", "update_servicenow")
+
+builder.add_node(
+    "update_servicenow_sensitive_tools",
+    create_tool_node_with_fallback(servicenow_sensitive_tools),
+)
+builder.add_node(
+    "update_servicenow_safe_tools",
+    create_tool_node_with_fallback(servicenow_safe_tools),
+)
+
+
+
+
+builder.add_edge("update_servicenow_sensitive_tools", "update_servicenow")
+builder.add_edge("update_servicenow_safe_tools", "update_servicenow")
+builder.add_conditional_edges(
+    "update_servicenow",
+    route_update_servicenow,
+    ["update_servicenow_sensitive_tools", "update_servicenow_safe_tools", "leave_skill", END],
+)
+
+
+# Referential assistant
+builder.add_node(
+    "enter_referential",
+    create_entry_node("Recherche dans le référentiel netbox et centreon supervision", "update_referential"),
+)
+builder.add_node("update_referential", Assistant(referential_runnable))
+builder.add_edge("enter_referential", "update_referential")
+
+builder.add_node(
+    "update_referential_sensitive_tools",
+    create_tool_node_with_fallback(referential_sensitive_tools),
+)
+builder.add_node(
+    "update_referential_safe_tools",
+    create_tool_node_with_fallback(referential_safe_tools),
+)
+
+builder.add_edge("update_referential_sensitive_tools", "update_referential")
+builder.add_edge("update_referential_safe_tools", "update_referential")
+builder.add_conditional_edges(
+    "update_referential",
+    route_update_referential,
+    ["update_referential_sensitive_tools", "update_referential_safe_tools", "leave_skill", END],
+)
+
+
+# (ADD HERE FOR NEW)
+# centreon assistant 
+builder.add_node(
+    "enter_centreon",
+    create_entry_node("Supervision & Graph assistant", "update_centreon"),
+)
+builder.add_node("update_centreon", Assistant(centreon_runnable))
+builder.add_edge("enter_centreon", "update_centreon")
+
+builder.add_node(
+    "update_centreon_sensitive_tools",
+    create_tool_node_with_fallback(centreon_sensitive_tools),
+)
+builder.add_node(
+    "update_centreon_safe_tools",
+    create_tool_node_with_fallback(centreon_safe_tools),
+)
+
+
+
+
+builder.add_edge("update_centreon_sensitive_tools", "update_centreon")
+builder.add_edge("update_centreon_safe_tools", "update_centreon")
+builder.add_conditional_edges(
+    "update_centreon",
+    route_update_centreon,
+    ["update_centreon_sensitive_tools", "update_centreon_safe_tools", "leave_skill", END],
+)
+
+# Firewall assistant
+builder.add_node(
+    "enter_firewall",
+    create_entry_node("Firewall Assistant", "update_firewall"),
+)
+builder.add_node("update_firewall", Assistant(firewall_runnable))
+builder.add_edge("enter_firewall", "update_firewall")
+
+builder.add_node(
+    "update_firewall_sensitive_tools",
+    create_tool_node_with_fallback(firewall_sensitive_tools),
+)
+builder.add_node(
+    "update_firewall_safe_tools",
+    create_tool_node_with_fallback(firewall_safe_tools),
+)
+
+
+
+
+builder.add_edge("update_firewall_sensitive_tools", "update_firewall")
+builder.add_edge("update_firewall_safe_tools", "update_firewall")
+builder.add_conditional_edges(
+    "update_firewall",
+    route_update_firewall,
+    ["update_firewall_sensitive_tools", "update_firewall_safe_tools", "leave_skill", END],
+)
+
+### GENERIC NODE FOR ALL ###
+# This node will be shared for exiting all specialized assistants
+def pop_dialog_state(state: State) -> dict:
+    """Pop the dialog stack and return to the main assistant.
+
+    This lets the full graph explicitly track the dialog flow and delegate control
+    to specific sub-graphs.
+    """
+    messages = []
+    if state["messages"][-1].tool_calls:
+        # Note: Doesn't currently handle the edge case where the llm performs parallel tool calls
+        messages.append(
+            ToolMessage(
+                content="Resuming dialog with the host assistant. Please reflect on the past conversation and assist the user as needed.",
+                tool_call_id=state["messages"][-1].tool_calls[0]["id"],
+            )
+        )
+    return {
+        "dialog_state": "pop",
+        "messages": messages,
+    }
+
+
+builder.add_node("leave_skill", pop_dialog_state)
+builder.add_edge("leave_skill", "primary_assistant")
+
+
+
+
+# Each delegated workflow can directly respond to the user
+# When the user responds, we want to return to the currently active workflow
+# (ADD HERE FOR NEW)
+def route_to_workflow(
+    state: State,
+) -> Literal[
+    "update_zscaler",
+    "update_wifi",
+    "update_fai",
+    "update_confluence",
+    "update_servicenow",
+    "update_referential",
+    "update_firewall",
+    "update_centreon"
+]:
+    """If we are in a delegated state, route directly to the appropriate assistant."""
+    dialog_state = state.get("dialog_state")
+    if not dialog_state:
+        return "primary_assistant"
+    return dialog_state[-1]
+
+
+# builder.add_conditional_edges("fetch_user_info", route_to_workflow)
+
+# Compile graph
+# (ADD HERE FOR NEW)
+memory = MemorySaver()
+graph = builder.compile(
+    checkpointer=memory,
+    # Let the user approve or deny the use of sensitive tools
+    interrupt_before=[
+        "update_zscaler_sensitive_tools",
+        "update_wifi_sensitive_tools",
+        "update_confluence_sensitive_tools",
+        "update_fai_sensitive_tools",
+        "update_servicenow_sensitive_tools",
+        "update_referential_sensitive_tools",
+        "update_firewall_sensitive_tools",
+        "update_centreon_sensitive_tools"
+    ]
+)
