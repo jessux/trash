@@ -8,7 +8,7 @@ Système canonique, paramètres NON optimisés (règles "Turtle" publiques) :
 Risque : r % du capital initial par position, risque ouvert total <= 4 %, max 3 positions par secteur.
 Coûts (prudents) : spread+commission en bp à l'entrée, swap chaque nuit quel que soit le sens.
 Données : OANDA journalier (huggingface.co/datasets/bunqi/OANDA_*), fichiers <SYM>_<décennie>.parquet.
-Usage: python lab3.py <dossier>
+Usage: python lab3.py <dossier> [--fx]
 """
 import glob
 import sys
@@ -32,6 +32,13 @@ MARKETS = {
     "SUGARUSD": ("agricole", 10, 2),
 }
 SECTOR_MAX, OPEN_RISK_MAX = 3, 4.0
+FX_MAJORS = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD"]
+FX_CROSSES = ["EURGBP", "EURJPY", "EURCHF", "EURAUD", "EURCAD", "EURNZD", "GBPJPY", "GBPCHF", "GBPAUD",
+              "GBPCAD", "GBPNZD", "AUDJPY", "AUDCAD", "AUDCHF", "AUDNZD", "NZDJPY", "NZDCAD", "NZDCHF",
+              "CADJPY", "CADCHF", "CHFJPY"]
+if "--fx" in sys.argv:  # univers forex seul : 28 paires FTMO, coût 0,8 bp majeures / 1,5 bp croisées
+    MARKETS = {p: ("devises", 0.8, 0.5) for p in FX_MAJORS} | {p: ("devises", 1.5, 0.5) for p in FX_CROSSES}
+    SECTOR_MAX = 8
 # swaps FTMO réels (bp/nuit, + = crédit) si ftmo_swaps.csv existe (voir ftmo_swaps.py), sinon estimation ci-dessus
 try:
     SWAP = {r.oanda: (r.long_bp, r.short_bp) for r in pd.read_csv("ftmo_swaps.csv").itertuples()}

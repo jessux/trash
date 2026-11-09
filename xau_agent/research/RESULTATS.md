@@ -73,3 +73,14 @@ pétrole Brent à la vente −85 %/an, gaz naturel à l'achat −253 %/an, maïs
 
 Limite : swaps actuels appliqués à tout l'historique (ils varient avec les taux et la courbe des futures).
 Conclusion : sur des CFD FTMO, le suivi de tendance n'est pas rentable.
+
+## Forex seul : 28 paires FTMO, suivi de tendance journalier (`lab3.py --fx`)
+Swaps FTMO forex : de −7 %/an à +1,5 %/an selon le sens (les plus faibles de FTMO). Le portage (carry) est quasi nul.
+
+| Système | Espérance brute | Nette (swaps FTMO) | Total 20 ans | Réussite FTMO 2016-2026 |
+|---|---|---|---|---|
+| 55/20 j | −0,08 R | −0,18 R | −120 % | 3 à 8 % |
+| 20/10 j | −0,09 R | −0,17 R | −186 % | 3 à 5 % |
+
+Négatif avant même les frais : la tendance sur le forex ne fonctionne plus depuis 2009 (années positives : 6/21).
+Le forex en intraday (EUR/USD, `lab2.py`) était lui aussi sans avantage.

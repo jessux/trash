@@ -27,6 +27,11 @@ if len(sys.argv) > 2:
 else:
     raw = json.load(urllib.request.urlopen("https://ftmo.com/wp-json/ftmo/symbols", timeout=30))
 ftmo = {s["code"]: s for s in raw["data"]["symbols"] if s["active"]}
+# toutes les paires forex FTMO présentes dans le dossier (EURGBP -> EUR/GBP)
+for f in glob.glob(f"{folder}/*_*.parquet"):
+    p = f.split("/")[-1].split("_")[0]
+    if len(p) == 6 and f"{p[:3]}/{p[3:]}" in ftmo:
+        MAP.setdefault(p, (f"{p[:3]}/{p[3:]}", 1))
 rows = []
 for sym, (code, unit) in MAP.items():
     s = ftmo[code]
