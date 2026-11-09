@@ -61,3 +61,15 @@ risque ouvert ≤ 4 %, max 3 positions par secteur. Variante 20/10 j pour la rob
 - Rendement très irrégulier : 2008 +29 %, 2020 +23 %, beaucoup d'années à −10/−15 %.
 - Le swap (frais de financement des CFD) détruit l'avantage ; les fonds tradent des futures, sans cette marge.
 - Les creux de 20 à 40 % sont normaux pour ce style, incompatibles avec la perte max FTMO de 10 %.
+
+### Avec les swaps réels FTMO (`ftmo_swaps.py` → `ftmo_swaps.csv`, relevés le 09/11/2026)
+Exemples (coût annuel si position tenue toute l'année) : indices à l'achat −7 à −10 %/an, or à l'achat −5 %/an,
+pétrole Brent à la vente −85 %/an, gaz naturel à l'achat −253 %/an, maïs à l'achat −32 %/an.
+
+| Système 55/20, swaps FTMO | Espérance nette | Total 20 ans | Réussite FTMO 2016-2026 |
+|---|---|---|---|
+| 27 marchés | −0,19 R | −118 % | 7 à 8 % |
+| Métaux seuls (choisis après coup) | +0,04 R | +7 % | 17 à 21 % |
+
+Limite : swaps actuels appliqués à tout l'historique (ils varient avec les taux et la courbe des futures).
+Conclusion : sur des CFD FTMO, le suivi de tendance n'est pas rentable.

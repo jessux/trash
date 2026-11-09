@@ -32,6 +32,11 @@ MARKETS = {
     "SUGARUSD": ("agricole", 10, 2),
 }
 SECTOR_MAX, OPEN_RISK_MAX = 3, 4.0
+# swaps FTMO réels (bp/nuit, + = crédit) si ftmo_swaps.csv existe (voir ftmo_swaps.py), sinon estimation ci-dessus
+try:
+    SWAP = {r.oanda: (r.long_bp, r.short_bp) for r in pd.read_csv("ftmo_swaps.csv").itertuples()}
+except FileNotFoundError:
+    SWAP = {}
 
 
 def load(folder, entry=55, exit_=20):
@@ -73,6 +78,8 @@ def run(cal, M, t0, risk=0.5, target=None, fail=None, t_end=None, journal=None, 
             p = pos.get(s)
             if p:
                 side, e, stp, sd, ex, cr = p
+                if s in SWAP:
+                    swap_bp = -(SWAP[s][0] if side > 0 else SWAP[s][1])
                 sw = swap_mult * swap_bp * 1e-4 * b[O] * b[GAP] / sd
                 p[5] += sw
                 cr += sw
@@ -163,7 +170,8 @@ def main():
         cal, M = load(folder, entry, exit_)
         t0 = int(np.searchsorted(cal, pd.Timestamp("2006-06-01")))
         print(f"\n===== Système {entry}/{exit_} jours, risque 0,5 %/position (2006-06 → 2026-11) =====")
-        for sm in (1.0, 0.5, 0.0):
+        print("Swaps:", "FTMO réels (ftmo_swaps.csv)" if SWAP else "estimés")
+        for sm in (1.0, 0.0):
             journal = []
             _, _, eq, _ = run(cal, M, t0, 0.5, journal=journal, swap_mult=sm)
             eq = pd.Series(eq, index=cal[t0:])
