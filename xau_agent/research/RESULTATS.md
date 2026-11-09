@@ -45,3 +45,19 @@ overnight acheteur, effet fin de mois, tendance H4.
 - Cassures d'ouverture, gaps, overnight : autour de 0, l'avantage avant frais est quasi nul.
 
 Détail : `lab2_results.csv`.
+
+## Suivi de tendance diversifié, 27 marchés en journalier (`lab3.py`, OANDA, 2006 → nov. 2026)
+Règles Turtle publiques, non optimisées (entrée 55 j / sortie 20 j, stop 2 ATR), 0,5 % de risque par position,
+risque ouvert ≤ 4 %, max 3 positions par secteur. Variante 20/10 j pour la robustesse.
+
+| Système 55/20 | Espérance nette | Total sur 20 ans | Pire perte (max DD) | Réussite FTMO 2016-2026 |
+|---|---|---|---|---|
+| Swap estimé (2 bp/nuit indices, prudent) | −0,08 R | −51 % | 93 % | 7 à 10 % |
+| Swap ÷ 2 | +0,02 R | +15 % | 45 % | 13 % |
+| Sans swap (cas futures) | +0,12 R | +80 % | 39 % | 21 % |
+
+- Avantage brut réel : +0,13 R/trade, 28 % de gagnants (profil classique).
+- Gains concentrés sur métaux, énergie, agricoles ; indices et devises perdants.
+- Rendement très irrégulier : 2008 +29 %, 2020 +23 %, beaucoup d'années à −10/−15 %.
+- Le swap (frais de financement des CFD) détruit l'avantage ; les fonds tradent des futures, sans cette marge.
+- Les creux de 20 à 40 % sont normaux pour ce style, incompatibles avec la perte max FTMO de 10 %.
