@@ -32,3 +32,16 @@ Reproduire : `python prep_data.py <dossier_m1> xau_m15.csv && python lab.py xau_
 | IA + pullback | — | — | −0,27 |
 
 Sans frais, l'avantage est quasi nul (±0,05 R) ; à la minute, les frais coûtent environ 0,3 R par trade. Réussite FTMO : 0 %.
+
+## Autres marchés + stratégies horaires de bourse (`lab2.py`, OANDA 5 min, 2015 → oct. 2026)
+Marchés : S&P 500, Nasdaq 100, Dow Jones, DAX, or, EUR/USD, pétrole WTI. Swap facturé chaque nuit.
+Stratégies : cassure du range des 30 premières min (2 variantes), momentum dernière 1/2 h, comblement de gap,
+overnight acheteur, effet fin de mois, tendance H4.
+
+**0 stratégie retenue sur 40** (critère IS : espérance > 0 et t-stat ≥ 2).
+- Meilleures en IS : effet fin de mois sur indices (+0,12 à +0,17 R, t ≈ 1,5–1,9) → nul ou négatif en OOS.
+- Or tendance H4 : +0,05 R (IS) / +0,09 R (OOS), positif mais non significatif (t ≈ 1).
+- Momentum dernière 1/2 h : négatif partout (t jusqu'à −4,8) : l'effet publié en 2018 a disparu.
+- Cassures d'ouverture, gaps, overnight : autour de 0, l'avantage avant frais est quasi nul.
+
+Détail : `lab2_results.csv`.

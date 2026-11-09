@@ -90,12 +90,12 @@ def simulate(df, side, sld, tpd, exitm, cost_bp=1e-4, cost_fix=0.10):
             if x is None:
                 continue
             cost = cost_bp * e + cost_fix
-            trades.append((t[i0], t[j0], t[j], s, ((x - e) * s - cost) / a))
+            trades.append((t[i0], t[j0], t[j], s, ((x - e) * s - cost) / a, e, a))
             pos = None
             continue
         if side[j] != 0 and np.isfinite(sld[j]) and sld[j] > 0 and j + 1 < len(df):
             pending = (side[j], sld[j], tpd[j], j)
-    return pd.DataFrame(trades, columns=["signal", "entry", "exit", "side", "R"])
+    return pd.DataFrame(trades, columns=["signal", "entry", "exit", "side", "R", "px", "risk"])
 
 
 # ---------- agent IA : filtre ML walk-forward (meta-labeling) ----------
