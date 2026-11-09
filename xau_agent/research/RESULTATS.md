@@ -84,3 +84,15 @@ Swaps FTMO forex : de −7 %/an à +1,5 %/an selon le sens (les plus faibles de 
 
 Négatif avant même les frais : la tendance sur le forex ne fonctionne plus depuis 2009 (années positives : 6/21).
 Le forex en intraday (EUR/USD, `lab2.py`) était lui aussi sans avantage.
+
+## Retour à la moyenne sur le forex, 28 paires FTMO (`lab4.py`, journalier + horaire, 2006 → oct. 2026)
+4 stratégies classiques, paramètres fixés avant le test, swaps FTMO réels.
+
+| Stratégie | Trades/an | Espérance brute IS / OOS | Nette OOS (t) | Paires positives OOS |
+|---|---|---|---|---|
+| RSI(2) journalier | ~850 | +0,004 / +0,003 R | −0,010 R (−2,3) | 8/28 |
+| Bollinger journalier | ~330 | 0,000 / −0,006 R | −0,045 R (−2,8) | 7/28 |
+| Bollinger horaire, session asiatique | ~1 600 | −0,006 / −0,006 R | −0,074 R (−10,3) | 5/28 |
+| RSI(14) horaire | ~2 100 | −0,021 / +0,003 R | −0,055 R (−7,3) | 2/28 |
+
+Avantage brut nul partout ; après frais, toutes perdantes, sur IS comme sur OOS. Réussite FTMO : 0 à 15 % (peu de challenges terminés).
