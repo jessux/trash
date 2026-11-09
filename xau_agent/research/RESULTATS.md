@@ -22,3 +22,13 @@ Le filtre IA réduit un peu les pertes (trend : −0,067 → −0,057 R en IS) m
 | 2 % | 25 % | 25 % | 3 à 4 mois |
 
 Reproduire : `python prep_data.py <dossier_m1> xau_m15.csv && python lab.py xau_m15.csv`
+
+## M1 (à la minute) : pire que M15
+| Agent | espR brut (sans frais) IS / OOS | Frais en R | espR net OOS |
+|---|---|---|---|
+| Trend Donchian 20/55 | −0,03 à −0,05 | 0,35–0,37 | −0,36 |
+| Pullback | +0,02 à +0,05 | 0,28–0,38 | −0,23 à −0,31 |
+| ORB Londres | −0,01 / +0,03 | 0,04 | −0,02 |
+| IA + pullback | — | — | −0,27 |
+
+Sans frais, l'avantage est quasi nul (±0,05 R) ; à la minute, les frais coûtent environ 0,3 R par trade. Réussite FTMO : 0 %.

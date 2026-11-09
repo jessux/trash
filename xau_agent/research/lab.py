@@ -73,7 +73,7 @@ def trend_pullback(df, sl=2.0, tp=2.0):
 
 
 # ---------- simulateur de trades ----------
-def simulate(df, side, sld, tpd, exitm):
+def simulate(df, side, sld, tpd, exitm, cost_bp=1e-4, cost_fix=0.10):
     t, o, h, l, c = df.index, df.open.values, df.high.values, df.low.values, df.close.values
     trades, pos, pending = [], None, None
     for j in range(len(df)):
@@ -89,7 +89,7 @@ def simulate(df, side, sld, tpd, exitm):
             x = o[j] if gap else slp if hit_sl else tpp if hit_tp else c[j] if exitm[j] else None
             if x is None:
                 continue
-            cost = 1e-4 * e + 0.10
+            cost = cost_bp * e + cost_fix
             trades.append((t[i0], t[j0], t[j], s, ((x - e) * s - cost) / a))
             pos = None
             continue
