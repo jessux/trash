@@ -30,9 +30,10 @@ def run(P,K,SLM,fee,lo,hi,use):
         curve[i]=eq
     s_=pd.Series(curve,index=idx);mm=s_.resample("30D").last().pct_change().dropna()
     return n,s_.iloc[-1]-1,(s_/s_.cummax()-1).min(),mm.min()
-print("P K SLM fee | filtre | trades ret maxDD pire30j")
-for fee in (0.0005,0.0002):
-  for P,K,S in itertools.product((24,48),(2,2.5),(2,3)):
-    for use in (False,True):
-      t,r,d,w=run(P,K,S,fee,0.8,1.2,use)
-      print(f"{P} {K} {S} {fee} | {'ON ' if use else 'off'} | {t:4d} {r:+7.1%} {d:7.1%} {w:6.1%}")
+if __name__=="__main__":
+    print("P K SLM fee | filtre | trades ret maxDD pire30j")
+    for fee in (0.0005,0.0002):
+      for P,K,S in itertools.product((24,48),(2,2.5),(2,3)):
+        for use in (False,True):
+          t,r,d,w=run(P,K,S,fee,0.8,1.2,use)
+          print(f"{P} {K} {S} {fee} | {'ON ' if use else 'off'} | {t:4d} {r:+7.1%} {d:7.1%} {w:6.1%}")
